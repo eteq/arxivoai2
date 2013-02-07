@@ -207,10 +207,7 @@ class OAI2Harvester(object):
 
         req = self.do_request(self.construct_start_url())
 
-        if self.verbose:
-            print 'Writing request to', self.writefn
-        with open(self.writefn, 'w') as f:
-            f.write(req.text)
+        self._process_record(req)
 
         res = self.extract_resume_info(req.text)
         if res is False:
@@ -238,10 +235,7 @@ class OAI2Harvester(object):
 
         req = self.do_request(self.construct_resume_url(token))
 
-        if self.verbose:
-            print 'Writing request to', self.writefn
-        with open(self.writefn, 'w') as f:
-            f.write(req.text)
+        self._process_record(req)
 
         res = self.extract_resume_info(req.text)
         if res is False:
@@ -264,6 +258,59 @@ class OAI2Harvester(object):
 
         return token
 
+    def _process_record(self, request):
+        if self.verbose:
+            print 'Writing request to', self.writefn
+        with open(self.writefn, 'w') as f:
+            f.write(request.text)
+
+    def get_sets(self):
+        """
+        Returns a list of (name, spec) pairs, where `spec` is a specifier that
+        can be used as `self.recordset`.
+        """
+        from urllib import urlencode
+        from urllib2 import urlopen
+        from xml.dom import minidom
+
+        params = [('verb', 'ListSets')]
+
+        url = self.baseurl + '?' + urlencode(params)
+        try:
+            u = urlopen(url)
+            dom = minidom.parseString(u.read())
+            specs = [e.firstChild.data for e in dom.getElementsByTagName('setSpec')]
+            names = [e.firstChild.data for e in dom.getElementsByTagName('setName')]
+
+            return zip(names, specs)
+        finally:
+            u.close()
+
+    def get_formats(self, identifier=None):
+        """
+        Returns a list of (name, schema, namespace) where `name` can be used as
+        `self.format`.
+        """
+        from urllib import urlencode
+        from urllib2 import urlopen
+        from xml.dom import minidom
+
+        params = [('verb', 'ListMetadataFormats')]
+        if identifier is not None:
+            params.append(('identifier', identifier))
+
+        url = self.baseurl + '?' + urlencode(params)
+        try:
+            u = urlopen(url)
+            dom = minidom.parseString(u.read())
+            names = [e.firstChild.data for e in dom.getElementsByTagName('metadataPrefix')]
+            schema = [e.firstChild.data for e in dom.getElementsByTagName('schema')]
+            namespaces = [e.firstChild.data for e in dom.getElementsByTagName('metadataNamespace')]
+
+            return zip(names, schema, namespaces)
+        finally:
+            u.close()
+
 
 def run_session(incremental=False, **kwargs):
     """
@@ -281,11 +328,15 @@ def run_session(incremental=False, **kwargs):
     kwargs are passed into the `OAI2Harvester` initializer.
 
     """
+    from time import time
+
     o = OAI2Harvester(**kwargs)
     if incremental:
         o.setup_incremental_session(None if incremental is True else incremental)
 
+    sttime = time()
     res = o.start_session()
     while res is not False:
         print 'Token: "{0}"'.format(res)
+        print 'Time from start:', (time() - sttime) / 60., 'min'
         res = o.continue_session(res)
