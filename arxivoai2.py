@@ -132,8 +132,9 @@ class OAI2Harvester(object):
     def do_request(self, url):
         import requests
         from time import sleep
+        from xml.etree import ElementTree
 
-        req = requests.get(url)
+        req = self.currentreq = requests.get(url)
 
         while (not req.ok):
             if req.status_code == 503:
@@ -146,7 +147,13 @@ class OAI2Harvester(object):
                 msg = 'Request failed w/status code {code}. Contents:\n{text}'
                 raise ValueError(msg.format(code=req.status_code, text=req.text), req)
 
-        self.currentreq = req
+        #now check for OAI errors
+        for i, e in enumerate(ElementTree.fromstring(req.text)):
+            if i > 5:
+                break  # error should be near the start
+            if e.tag.endswith('error'):
+                raise ValueError('Request responded with an error', e.get('code'), e.text)
+
         return req
 
     def setup_incremental_session(self, prevsessionnum=None):
@@ -180,6 +187,7 @@ class OAI2Harvester(object):
                         raise ValueError('Verb for most recent session is {0}, but should be ListRecords!'.format(elem.attrib['verb']))
                     format = elem.attrib['metadataPrefix']
                     recset = elem.attrib['set']
+                    gotreq = True
 
                 if gotdate and gotreq:
                     break
@@ -334,6 +342,11 @@ def run_session(incremental=False, **kwargs):
 
     kwargs are passed into the `OAI2Harvester` initializer.
 
+    Returns
+    -------
+    harvster : OAI2Harvester
+        The harvester object used to run the session.
+
     """
     from time import time
 
@@ -342,8 +355,24 @@ def run_session(incremental=False, **kwargs):
         o.setup_incremental_session(None if incremental is True else incremental)
 
     sttime = time()
-    res = o.start_session()
+    try:
+        res = o.start_session()
+    except ValueError as e:
+        if e.args[0] == 'Request responded with an error' and len(e.args) > 2 and 'Bad date' in e.args[2]:
+            # this means the dat is a full datetime and we only want date
+            newstartdate = o.startdate.split('T')[0]
+            if o.verbose:
+                print 'Initial request errored for date', o.startdate, 'trying', newstartdate
+            o.startdate = newstartdate
+            o.reset_session()
+            res = o.start_session()
+        else:
+            raise
+
     while res is not False:
-        print 'Token: "{0}"'.format(res)
-        print 'Time from start:', (time() - sttime) / 60., 'min'
+        if o.verbose:
+            print 'Token: "{0}"'.format(res)
+            print 'Time from start:', (time() - sttime) / 60., 'min'
         res = o.continue_session(res)
+
+    return o
