@@ -22,13 +22,15 @@ class OAI2Harvester(object):
                  verbose=True, basewritename='arXiv_oai/reclist',
                  recnumpadding=4):
 
-        self.basewritename = basewritename
         self.startdate = startdate
         self.format = format
         self.recordset = recordset
         self.baseurl = baseurl
 
+        self.basewritename = basewritename
         self.recnumpadding = recnumpadding
+
+        self.verbose = verbose
 
         self.reset_session()  # initializes session-related vars
 
@@ -48,12 +50,15 @@ class OAI2Harvester(object):
         sessionnums = [int(fn.split('_')[0]) for fn in fns]
         lastsessionnum = 0 if len(sessionnums) == 0 else max(sessionnums)
 
-        lastsessionfns = [fn for fn in fns if int(fn.split('_')[0]) == lastsessionnum]
-        inums = [int(fn.split('_')[1]) for fn in lastsessionfns]
-        mininum = min(inums)
-        minfns = [fn for inum, fn in zip(inums, fns) if mininum]
-        assert len(minfns) == 1
-        firstfn = self.basewritename + minfns[0]
+        if lastsessionnum == 0:
+            firstfn = None
+        else:
+            lastsessionfns = [fn for fn in fns if int(fn.split('_')[0]) == lastsessionnum]
+            inums = [int(fn.split('_')[1]) for fn in lastsessionfns]
+            mininum = min(inums)
+            minfns = [fn for inum, fn in zip(inums, fns) if mininum == inum]
+            assert len(minfns) == 1
+            firstfn = self.basewritename + minfns[0]
 
         return lastsessionnum, firstfn
 
@@ -205,6 +210,8 @@ class OAI2Harvester(object):
         else:
             raise ValueError('Already in a session.  Call reset_session() before doing this again.')
 
+        if self.verbose:
+            print 'Starting initial request to', self.baseurl
         req = self.do_request(self.construct_start_url())
 
         self._process_record(req)
