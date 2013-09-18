@@ -1,3 +1,10 @@
 This is a simple tool to harvest data from sites that support the `OAI PMH v2 protocol <http://www.openarchives.org/OAI/2.0/openarchivesprotocol.htm>`_.
 
 It has thus far only been tested on `the arXiv <http://arxiv.org/>`_, but should work with other OAI PMH v2 Repositories.
+
+An example of use (with the astro-ph part of arXiv) might be::
+
+    harvesterkwargs = dict(incremental=incremental, basewritename='arXiv_oai/reclist',
+      startdate=None, format='arXivRaw', recordset='physics:astro-ph',
+      baseurl='http://export.arxiv.org/oai2', recnumpadding=4)
+    pyoai2.run_session(**harvesterkwargs)
